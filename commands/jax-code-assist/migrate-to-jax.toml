@@ -1,0 +1,12 @@
+# Command for semi-automating BDN customer allowlisting.
+name = "migrate-to-jax"
+description = "Migrate a given module or repo to JAX"
+prompt = """
+Convert the given module or repo to JAX. Once you have converted the code, do the following:
+- Evaluate the output by running /jax-code-assist:auto-evaluate-code
+- Fix issues in the above by running /jax-code-assist:self-debugging
+- If the evaluation score is satisfactory, create a pull request for the converted code.
+- If the evaluation score is not satisfactory, continue fixing issues until it is.
+- Make sure to add tests for the converted code wherever necessary.
+- Ensure the code adheres to Google's coding standards.
+"""

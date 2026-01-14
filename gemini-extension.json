@@ -1,0 +1,8 @@
+{
+  "name": "TPU-CodeAssist",
+  "version": "1.0.0",
+  "description": "Helps migration from one ML framework to another.",
+  "contextFileName": "GEMINI.md",
+  "tools": [],
+  "commands_dir": "commands"
+}

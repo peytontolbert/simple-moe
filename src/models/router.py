@@ -3,11 +3,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, Optional
 
+from . import _model_stack
+
+
 class Router(nn.Module):
     """Router network for Mixture of Experts model."""
     
     def __init__(self, input_dim: int, num_experts: int, k: int = 1,
-                 capacity_factor: float = 1.0, noise_epsilon: float = 1e-2):
+                 capacity_factor: float = 1.0, noise_epsilon: float = 1e-2,
+                 drop_policy: str = "dropless"):
         """
         Initialize the router network.
         
@@ -24,6 +28,7 @@ class Router(nn.Module):
         self.k = k
         self.capacity_factor = capacity_factor
         self.noise_epsilon = noise_epsilon
+        self.drop_policy = drop_policy
         
         # Router weights
         self.router = nn.Linear(input_dim, num_experts, bias=False)
@@ -38,7 +43,7 @@ class Router(nn.Module):
             noise = torch.randn_like(x) * self.noise_epsilon
             x = x + noise
             
-        return self.router(x)
+        return _model_stack.runtime_linear(self.router, x)
     
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """
@@ -49,7 +54,7 @@ class Router(nn.Module):
             
         Returns:
             Tuple of:
-            - routing_weights: Tensor of shape [batch_size, num_experts]
+            - routing_weights: Tensor of shape [batch_size, k]
             - routing_indices: Tensor of shape [batch_size, k]
             - aux_loss: Load balancing auxiliary loss (None if not training)
         """
@@ -57,19 +62,34 @@ class Router(nn.Module):
         routing_scores = self._compute_routing_scores(x)
         
         # Get top-k routing weights and indices
-        routing_weights, routing_indices = torch.topk(routing_scores, self.k, dim=-1)
-        routing_weights = F.softmax(routing_weights, dim=-1)
+        routing_weights, routing_indices = _model_stack.topk_route(
+            routing_scores,
+            k=self.k,
+            capacity_factor=self.capacity_factor,
+            drop_policy=self.drop_policy,
+        )
         
         # Compute load balancing loss during training
         aux_loss = None
         if self.training:
             # Compute expert assignment counts
-            expert_counts = torch.zeros(self.num_experts, device=x.device)
-            for idx in routing_indices.view(-1):
-                expert_counts[idx] += 1
+            expert_counts = torch.zeros(
+                self.num_experts,
+                device=x.device,
+                dtype=routing_scores.dtype,
+            )
+            expert_counts.scatter_add_(
+                0,
+                routing_indices.reshape(-1),
+                torch.ones(
+                    routing_indices.numel(),
+                    device=x.device,
+                    dtype=routing_scores.dtype,
+                ),
+            )
                 
             # Compute load balancing loss
             target_count = torch.ones_like(expert_counts) * (batch_size * self.k / self.num_experts)
             aux_loss = F.mse_loss(expert_counts, target_count)
             
-        return routing_weights, routing_indices, aux_loss 
+        return routing_weights, routing_indices, aux_loss

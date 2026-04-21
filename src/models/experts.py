@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 from typing import Dict, Any, Optional
 
+from . import _model_stack
+
+
 class ExpertBase(nn.Module):
     """Base class for expert networks in the Mixture of Experts model."""
     
@@ -27,7 +30,12 @@ class ExpertBase(nn.Module):
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the expert."""
-        return self.network(x)
+        for layer in self.network:
+            if isinstance(layer, nn.Linear):
+                x = _model_stack.runtime_linear(layer, x)
+            else:
+                x = layer(x)
+        return x
     
     def get_config(self) -> Dict[str, Any]:
         """Get expert configuration for serialization."""

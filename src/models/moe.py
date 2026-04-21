@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import List, Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple
 
 from .experts import ExpertBase, FFNExpert
 from .router import Router
@@ -57,36 +57,38 @@ class MixtureOfExperts(nn.Module):
         Forward pass through the MoE model.
         
         Args:
-            x: Input tensor of shape [batch_size, input_dim]
+            x: Input tensor of shape [..., input_dim]
             
         Returns:
             Tuple of:
-            - output: Model output of shape [batch_size, output_dim]
+            - output: Model output of shape [..., output_dim]
             - aux_loss: Auxiliary load balancing loss (None if not training)
         """
-        batch_size = x.shape[0]
-        
         # Get routing weights and indices
-        routing_weights, routing_indices, aux_loss = self.router(x)
-        
-        # Initialize output tensor
-        combined_output = torch.zeros(batch_size, self.output_dim, device=x.device)
-        
-        # Compute expert outputs and combine them
-        for i in range(self.k):
-            expert_indices = routing_indices[:, i]
-            expert_weights = routing_weights[:, i].unsqueeze(1)
-            
-            # Gather expert outputs
-            expert_outputs = torch.stack([
-                self.experts[idx](x[b:b+1])
-                for b, idx in enumerate(expert_indices)
-            ])
-            
-            # Combine expert outputs weighted by routing weights
-            combined_output += (expert_outputs.squeeze(1) * expert_weights)
-            
-        return combined_output, aux_loss
+        leading_shape = x.shape[:-1]
+        flat_x = x.reshape(-1, x.shape[-1])
+        routing_weights, routing_indices, aux_loss = self.router(flat_x)
+
+        combined_output = torch.zeros(
+            flat_x.shape[0],
+            self.output_dim,
+            device=flat_x.device,
+            dtype=flat_x.dtype,
+        )
+
+        token_indices = torch.arange(flat_x.shape[0], device=flat_x.device).repeat_interleave(self.k)
+        flat_assignments = routing_indices.reshape(-1)
+        flat_weights = routing_weights.reshape(-1)
+
+        for expert_idx in flat_assignments.unique(sorted=True).tolist():
+            selected = flat_assignments == expert_idx
+            selected_tokens = token_indices[selected]
+            selected_inputs = flat_x.index_select(0, selected_tokens)
+            selected_outputs = self.experts[int(expert_idx)](selected_inputs)
+            weighted_outputs = selected_outputs * flat_weights[selected].unsqueeze(-1).to(selected_outputs.dtype)
+            combined_output.index_add_(0, selected_tokens, weighted_outputs)
+
+        return combined_output.reshape(*leading_shape, self.output_dim), aux_loss
     
     def get_config(self) -> Dict[str, Any]:
         """Get model configuration for serialization."""

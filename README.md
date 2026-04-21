@@ -24,6 +24,8 @@ cd simple-moe
 pip install -r requirements.txt
 ```
 
+`requirements.txt` installs `model-stack` from GitHub so `simple-moe` can use the runtime-backed routing and linear paths when that package is available.
+
 ## Quick Start
 
 Here's a simple example of creating and training an MoE model:

@@ -158,3 +158,18 @@ trainer = MoETrainer(
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Citation
+
+If you use this repository in teaching, presentations, or other materials,
+please cite it as:
+
+```text
+Peyton Tolbert. Simple MoE: A PyTorch Mixture of Experts Implementation.
+GitHub, 2025. https://github.com/peytontolbert/simple-moe
+```
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for
+details.
